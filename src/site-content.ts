@@ -64,24 +64,43 @@ export const defaultSiteContent = {
 };
 
 const paragraph = z.string().min(1).max(4000);
+const safeLink = z
+  .string()
+  .refine(
+    (value) => {
+      if (value.startsWith("/") && !value.startsWith("//")) return true;
+      try {
+        return ["http:", "https:"].includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    },
+    { message: "Must be an http(s) URL or a single-slash relative path" },
+  );
+const safeExternalLink = z
+  .string()
+  .url()
+  .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+    message: "Must use http or https",
+  });
 export const siteContentSchema = z.object({
   themeDefault: z.enum(["light", "dark"]),
   hero: z.object({
     greeting: paragraph, title: paragraph, description: paragraph, availability: paragraph,
-    image: z.string().min(1).max(500), imageAlt: z.string().max(300), cvPath: z.string().min(1).max(500),
+    image: safeLink.min(1).max(500), imageAlt: z.string().max(300), cvPath: safeLink.min(1).max(500),
     cvFilename: z.string().max(200), cvLabel: paragraph, contactLabel: paragraph,
   }),
-  about: z.object({ title: paragraph, paragraphs: z.array(paragraph).min(1).max(12), image: z.string().min(1).max(500), imageAlt: z.string().max(300) }),
+  about: z.object({ title: paragraph, paragraphs: z.array(paragraph).min(1).max(12), image: safeLink.min(1).max(500), imageAlt: z.string().max(300) }),
   skills: z.object({
     title: paragraph, intro: paragraph, supportingText: paragraph, noteTitle: paragraph, learningTitle: paragraph,
-    learningText: paragraph, mainImage: z.string().min(1).max(500), workImage: z.string().min(1).max(500),
+    learningText: paragraph, mainImage: safeLink.min(1).max(500), workImage: safeLink.min(1).max(500),
     photoCaption: paragraph, groups: z.array(z.object({ group: paragraph, items: z.array(paragraph).min(1).max(30) })).max(30),
   }),
   contact: z.object({
     formTitle: paragraph, heading: paragraph, tagline: paragraph, body: paragraph, email: z.string().email(), phone: z.string().max(40),
-    whatsappUrl: z.string().url(), telegramUrl: z.string().url(), topics: z.array(paragraph).max(40),
+    whatsappUrl: safeExternalLink, telegramUrl: safeExternalLink, topics: z.array(paragraph).max(40),
   }),
-  links: z.object({ github: z.string().url(), linkedin: z.string().url(), x: z.string().url() }),
+  links: z.object({ github: safeExternalLink, linkedin: safeExternalLink, x: safeExternalLink }),
   footer: z.object({ copyright: paragraph }),
 });
 
