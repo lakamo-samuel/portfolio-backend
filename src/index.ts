@@ -44,7 +44,7 @@ const { db, pool } = createDatabase(
   env.DATABASE_SSL === "true",
 );
 const app = express();
-app.set("trust proxy", env.TRUST_PROXY === "true");
+app.set("trust proxy", env.TRUST_PROXY === "true" || Boolean(process.env.RENDER));
 app.use((req, res, next) => {
   const startedAt = Date.now();
   res.on("finish", () => {
@@ -121,6 +121,9 @@ function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
   }
 }
 
+app.get("/", (_req, res) =>
+  res.json({ service: "kjtech-portfolio-api", status: "ok" }),
+);
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.post(
   "/auth/login",
