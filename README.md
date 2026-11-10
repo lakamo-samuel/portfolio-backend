@@ -19,18 +19,18 @@ Projects use `id`, `title`, `description`, `tech`, `thumbnail`, `screenshot`, op
 
 ## Data and visit counting
 
-Run `psql "$DATABASE_URL" -f schema.sql` and then `psql "$DATABASE_URL" -f seed.sql` against the Render PostgreSQL database. The seed imports the four projects currently hard-coded in the portfolio so they can be managed in the dashboard. The portfolio retains its local fallback until `NEXT_PUBLIC_PORTFOLIO_API_URL` is configured.
+Run `psql "$DATABASE_URL" -f schema.sql` and then `psql "$DATABASE_URL" -f seed.sql` against the configured PostgreSQL database. The seed imports the four projects currently hard-coded in the portfolio so they can be managed in the dashboard. The portfolio retains its local fallback until `NEXT_PUBLIC_PORTFOLIO_API_URL` is configured.
 
-The portfolio creates a random first-party session ID in `sessionStorage` and sends the current path and document referrer to `/track`. The API stores no raw IP: it HMAC-hashes the IP with a server-only secret and a calendar-month prefix. The session identifier is also HMAC-hashed before storage. This supports approximate monthly unique visitors and session/page-view counts; it is not a person-level measurement. A repeated page path within the same session is suppressed for 30 minutes. Referrers are reduced to host names, and paths exclude query strings. Configure proxy trust correctly for the Render service before production; Express trusts one proxy hop.
+The portfolio creates a random first-party session ID in `sessionStorage` and sends the current path and document referrer to `/track`. The API stores no raw IP: it HMAC-hashes the IP with a server-only secret and a calendar-month prefix. The session identifier is also HMAC-hashed before storage. This supports approximate monthly unique visitors and session/page-view counts; it is not a person-level measurement. A repeated page path within the same session is suppressed for 30 minutes. Referrers are reduced to host names, and paths exclude query strings. Local development uses the Docker Compose Postgres service; production accepts the Neon `DATABASE_URL` supplied to Render.
 
 ## Local development
 
-From the parent `portfolio/` folder, start PostgreSQL with `docker compose up -d postgres`. Compose initializes a fresh database from `backend/schema.sql` and `backend/seed.sql`. Then run `cd backend && npm install && npm run dev`, `cd dashboard && npm install && npm run dev`, and run the portfolio from `portfolio-page/` as usual. Local dashboard credentials are `admin@example.com` / `local-dev-only-change-me`. These development credentials and local secrets must never be used in production.
+From the parent `portfolio/` folder, start PostgreSQL with `docker compose up -d postgres`. Compose initializes a fresh database from `backend/schema.sql` and `backend/seed.sql`. Run the API against that Docker database with `cd backend && DATABASE_URL=postgresql://portfolio:portfolio_dev_password@localhost:5432/portfolio DATABASE_SSL=false npm run dev`, then run the dashboard and portfolio apps normally. Local dashboard credentials are `admin@example.com` / `local-dev-only-change-me`. These development credentials and local secrets must never be used in production.
 
 ## Deploy
 
-1. Create a Render PostgreSQL instance and deploy `backend/` as a Node web service (or use `backend/render.yaml`). Set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `PORTFOLIO_ORIGIN`, and `DASHBOARD_ORIGIN`; keep generated `JWT_SECRET` and `IP_HASH_SECRET` private.
-2. Initialize the database with `backend/schema.sql`.
+1. Deploy `backend/` as a Node web service (or use `backend/render.yaml`). Set the Neon `DATABASE_URL`, `DATABASE_SSL=true`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `PORTFOLIO_ORIGIN`, and `DASHBOARD_ORIGIN`; keep generated `JWT_SECRET` and `IP_HASH_SECRET` private.
+2. Initialize Neon with `backend/schema.sql` and `backend/seed.sql`.
 3. Deploy the portfolio as it is currently deployed and set `NEXT_PUBLIC_PORTFOLIO_API_URL` to the API origin. Its visible layout and styles are unchanged.
 4. Deploy `dashboard/` separately and set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_PORTFOLIO_URL` at build time.
 

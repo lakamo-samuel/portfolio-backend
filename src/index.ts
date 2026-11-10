@@ -25,6 +25,20 @@ const required = [
 for (const key of required)
   if (!process.env[key]) throw new Error(`Missing ${key}`);
 const env = process.env as Record<string, string>;
+let databaseUrl: URL;
+try {
+  databaseUrl = new URL(env.DATABASE_URL);
+  if (databaseUrl.protocol !== "postgres:" && databaseUrl.protocol !== "postgresql:")
+    throw new Error("DATABASE_URL must use the postgres:// or postgresql:// scheme");
+  if (!databaseUrl.hostname || !databaseUrl.pathname.slice(1))
+    throw new Error("DATABASE_URL must include a database name");
+  if (/[\\'"]/.test(databaseUrl.pathname.slice(1)))
+    throw new Error("DATABASE_URL contains quote or backslash characters in the database name");
+} catch (error) {
+  const message = error instanceof Error ? error.message : "invalid database URL";
+  console.error(`[api] database configuration error: ${message}`);
+  process.exit(1);
+}
 const { db, pool } = createDatabase(
   env.DATABASE_URL,
   env.DATABASE_SSL === "true",
@@ -158,7 +172,8 @@ app.get("/admin/content", requireAdmin, async (_req, res, next) => {
       updatedAt: row?.updatedAt ?? null,
     });
   } catch (e) {
-    next(e);
+    console.error("[api] admin content lookup failed", e);
+    res.status(503).json({ error: "Database unavailable. Content could not be loaded." });
   }
 });
 app.put("/admin/content", requireAdmin, async (req, res, next) => {
@@ -178,7 +193,8 @@ app.put("/admin/content", requireAdmin, async (req, res, next) => {
       .returning({ updatedAt: siteContent.updatedAt });
     res.json({ ok: true, updatedAt: row?.updatedAt });
   } catch (e) {
-    next(e);
+    console.error("[api] admin content update failed", e);
+    res.status(503).json({ error: "Database unavailable. Content was not saved." });
   }
 });
 app.get("/projects", async (_req, res, next) => {
@@ -226,7 +242,8 @@ app.get("/admin/projects", requireAdmin, async (_req, res, next) => {
       .orderBy(asc(projects.sortOrder), asc(projects.title));
     res.json(rows);
   } catch (e) {
-    next(e);
+    console.error("[api] admin projects lookup failed", e);
+    res.status(503).json({ error: "Database unavailable. Projects could not be loaded." });
   }
 });
 app.put("/admin/projects/:id", requireAdmin, async (req, res, next) => {
@@ -270,7 +287,8 @@ app.put("/admin/projects/:id", requireAdmin, async (req, res, next) => {
       });
     res.json({ ok: true });
   } catch (e) {
-    next(e);
+    console.error("[api] admin project update failed", e);
+    res.status(503).json({ error: "Database unavailable. Project was not saved." });
   }
 });
 app.delete("/admin/projects/:id", requireAdmin, async (req, res, next) => {
@@ -280,7 +298,8 @@ app.delete("/admin/projects/:id", requireAdmin, async (req, res, next) => {
     await db.delete(projects).where(eq(projects.id, id));
     res.status(204).end();
   } catch (e) {
-    next(e);
+    console.error("[api] admin project deletion failed", e);
+    res.status(503).json({ error: "Database unavailable. Project was not deleted." });
   }
 });
 
@@ -333,7 +352,8 @@ app.post(
       });
       res.status(202).json({ ok: true });
     } catch (e) {
-      next(e);
+      console.error("[api] analytics lookup failed", e);
+      res.status(503).json({ error: "Database unavailable. Analytics could not be loaded." });
     }
   },
 );
@@ -397,11 +417,31 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: "Internal server error" });
 });
 const port = Number(process.env.PORT) || 4000;
-const server = app.listen(port, () =>
-  console.log(`Portfolio API listening on ${port}`),
-);
+let server: ReturnType<typeof app.listen>;
+async function startServer() {
+  try {
+    await pool.query("select 1");
+    console.log(
+      `[api] database connection verified (${databaseUrl.hostname}/${databaseUrl.pathname.slice(1)})`,
+    );
+    server = app.listen(port, () =>
+      console.log(`Portfolio API listening on ${port}`),
+    );
+  } catch (error) {
+    console.error("[api] database connection failed; API will not start", error);
+    await pool.end().catch((closeError: unknown) => {
+      console.error("[api] failed to close database pool", closeError);
+    });
+    process.exit(1);
+  }
+}
+void startServer();
 const shutdown = (signal: string) => {
   console.log(`Received ${signal}; shutting down`);
+  if (!server) {
+    void pool.end().finally(() => process.exit(0));
+    return;
+  }
   server.close(() => {
     void pool.end().finally(() => process.exit(0));
   });
