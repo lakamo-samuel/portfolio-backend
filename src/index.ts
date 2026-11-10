@@ -25,6 +25,7 @@ const required = [
 for (const key of required)
   if (!process.env[key]) throw new Error(`Missing ${key}`);
 const env = process.env as Record<string, string>;
+const configuredAdminEmail = env.ADMIN_EMAIL.trim();
 let databaseUrl: URL;
 try {
   databaseUrl = new URL(env.DATABASE_URL);
@@ -42,6 +43,9 @@ try {
 const { db, pool } = createDatabase(
   env.DATABASE_URL,
   env.DATABASE_SSL === "true",
+);
+console.log(
+  `[api] admin login configured for ${configuredAdminEmail} (password length: ${env.ADMIN_PASSWORD.length})`,
 );
 const app = express();
 app.set("trust proxy", env.TRUST_PROXY === "true" || Boolean(process.env.RENDER));
@@ -137,12 +141,24 @@ app.post(
     const body = z
       .object({ email: z.string().email(), password: z.string().min(1) })
       .safeParse(req.body);
-    if (
-      !body.success ||
-      body.data.email.toLowerCase() !== env.ADMIN_EMAIL.toLowerCase() ||
-      body.data.password !== env.ADMIN_PASSWORD
-    )
+    const emailMatches =
+      body.success &&
+      body.data.email.trim().toLowerCase() === configuredAdminEmail.toLowerCase();
+    const passwordMatches =
+      body.success && body.data.password === env.ADMIN_PASSWORD;
+    if (!emailMatches || !passwordMatches) {
+      console.warn(
+        JSON.stringify({
+          event: "auth_login_failed",
+          reason: body.success ? "credential_mismatch" : "invalid_request",
+          email: body.success ? body.data.email.trim().toLowerCase() : null,
+          emailMatches,
+          passwordLength: body.success ? body.data.password.length : null,
+          configuredPasswordLength: env.ADMIN_PASSWORD.length,
+        }),
+      );
       return res.status(401).json({ error: "Invalid credentials" });
+    }
     const token = jwt.sign({ role: "portfolio-admin" }, env.JWT_SECRET, {
       expiresIn: "8h",
     });
